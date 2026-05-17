@@ -1,0 +1,36 @@
+[package]
+name = "rust_wthisper_frontend"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+js-sys = "0.3"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+
+[dependencies.web-sys]
+version = "0.3"
+features = [
+    "console",
+    "CssStyleDeclaration",
+    "Document",
+    "DomTokenList",
+    "Element",
+    "Event",
+    "Headers",
+    "HtmlCollection",
+    "HtmlButtonElement",
+    "HtmlElement",
+    "HtmlInputElement",
+    "Node",
+    "NodeList",
+    "Performance",
+    "Request",
+    "RequestInit",
+    "RequestMode",
+    "Response",
+    "Window",
+]

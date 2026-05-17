@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Rust Wthisper</title>
+        <style>
+            :root {
+                color-scheme: dark;
+                font-family:
+                    "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo,
+                    Consolas, monospace;
+                background: #121417;
+                color: #edf1f4;
+            }
+
+            * {
+                box-sizing: border-box;
+            }
+
+            body {
+                margin: 0;
+                min-height: 100vh;
+                display: grid;
+                place-items: center;
+                background:
+                    radial-gradient(
+                        circle at 20% 10%,
+                        rgba(43, 117, 120, 0.32),
+                        transparent 34%
+                    ),
+                    linear-gradient(
+                        145deg,
+                        #111316 0%,
+                        #1b2024 48%,
+                        #111316 100%
+                    );
+            }
+
+            main {
+                width: min(92vw, 720px);
+                display: grid;
+                justify-items: center;
+                gap: 28px;
+                text-align: center;
+            }
+
+            .tiles {
+                --level: 0;
+                width: 100%;
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                gap: 14px;
+            }
+
+            .tile {
+                min-height: 136px;
+                border: 1px solid rgba(255, 255, 255, 0.14);
+                border-radius: 8px;
+                background: rgba(255, 255, 255, 0.06);
+                color: #edf1f4;
+                cursor: pointer;
+                display: grid;
+                align-content: center;
+                gap: 14px;
+                padding: 18px;
+                text-align: left;
+                transition:
+                    transform 160ms ease,
+                    background 200ms ease,
+                    border-color 200ms ease,
+                    box-shadow 200ms ease;
+            }
+
+            .tile:hover {
+                transform: translateY(-2px);
+            }
+
+            .tile-title {
+                color: #aeb8c1;
+                font-size: 14px;
+                font-weight: 700;
+                text-transform: uppercase;
+            }
+
+            .tile-time {
+                font-size: clamp(22px, 4vw, 34px);
+                font-weight: 700;
+                line-height: 1;
+            }
+
+            .tile-unit {
+                color: #aeb8c1;
+                font-size: 13px;
+            }
+
+            .tile.waiting.active {
+                border-color: rgba(47, 143, 131, 0.7);
+                background: rgba(47, 143, 131, 0.2);
+                box-shadow:
+                    0 0 0 8px rgba(47, 143, 131, 0.12),
+                    0 0 54px rgba(47, 143, 131, 0.3);
+            }
+
+            .tile.hearing.active {
+                border-color: rgba(213, 109, 63, 0.72);
+                background: rgba(213, 109, 63, 0.22);
+                box-shadow:
+                    0 0 0 calc(8px + var(--level) * 30px)
+                        rgba(213, 109, 63, 0.13),
+                    0 0 calc(54px + var(--level) * 80px)
+                        rgba(213, 109, 63, 0.36);
+            }
+
+            .tile.syncing.active {
+                border-color: rgba(75, 116, 217, 0.72);
+                background: rgba(75, 116, 217, 0.22);
+                box-shadow:
+                    0 0 0 8px rgba(75, 116, 217, 0.14),
+                    0 0 64px rgba(75, 116, 217, 0.36);
+            }
+
+            .meter {
+                width: 100%;
+                display: grid;
+                gap: 6px;
+                padding: 1px;
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                border-radius: 8px;
+                background: #050607;
+                box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.8);
+                position: relative;
+            }
+
+            .meter-track {
+                height: 54px;
+                display: grid;
+                grid-template-columns: repeat(100, minmax(0, 1fr));
+                gap: 1px;
+                padding: 1px;
+                border-radius: 6px;
+                background: #000000;
+            }
+
+            .meter-segment {
+                min-width: 2px;
+                border-radius: 1px;
+                background: #101416;
+                cursor: pointer;
+                box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.15);
+            }
+
+            .meter-segment.active {
+                background: var(--segment-color);
+                box-shadow:
+                    0 0 6px
+                        color-mix(
+                            in srgb,
+                            var(--segment-color) 58%,
+                            transparent
+                        ),
+                    inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+            }
+
+            .meter-segment.selected {
+                background: color-mix(
+                    in srgb,
+                    var(--segment-color) 72%,
+                    #ffffff
+                );
+                box-shadow:
+                    0 0 0 2px #ffffff,
+                    0 0 14px var(--segment-color),
+                    inset 0 0 0 1px rgba(0, 0, 0, 0.5);
+            }
+
+            .meter-tooltip {
+                position: absolute;
+                left: calc(var(--threshold-position, 50%) - 0.5%);
+                bottom: calc(100% - 48px);
+                z-index: 2;
+                padding: 4px 8px;
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                border-radius: 6px;
+                background: rgba(0, 0, 0, 1);
+                color: #edf1f4;
+                font-size: 24px;
+                transform: translateX(-50%);
+                white-space: nowrap;
+                pointer-events: none;
+            }
+
+            .meter-hover-tooltip {
+                position: absolute;
+                left: var(--hover-position, 50%);
+                bottom: calc(100% + 8px);
+                z-index: 5;
+                display: none;
+                padding: 6px 10px;
+                border: 1px solid rgba(255, 255, 255, 0.26);
+                border-radius: 6px;
+                background: #050607;
+                color: #edf1f4;
+                font-size: 24px;
+                transform: translateX(-50%);
+                white-space: nowrap;
+                pointer-events: none;
+            }
+
+            .meter-hover-tooltip.visible {
+                display: block;
+            }
+
+            .meter-hover-tooltip::after {
+                content: "";
+                position: absolute;
+                left: 50%;
+                top: 100%;
+                width: 9px;
+                height: 9px;
+                background: #050607;
+                border-right: 1px solid rgba(255, 255, 255, 0.26);
+                border-bottom: 1px solid rgba(255, 255, 255, 0.26);
+                transform: translate(-50%, -4px) rotate(45deg);
+            }
+
+            .meter-tooltip::after {
+                content: "";
+                position: absolute;
+                left: 50%;
+                top: 100%;
+                width: 8px;
+                height: 8px;
+                background: #050607;
+                border-right: 1px solid rgba(255, 255, 255, 0.2);
+                border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+                transform: translate(-50%, -4px) rotate(45deg);
+            }
+
+            .transcript {
+                width: 100%;
+                min-height: 84px;
+                margin: 0;
+                padding: 18px 20px;
+                border: 1px solid rgba(255, 255, 255, 0.14);
+                border-radius: 8px;
+                background: rgba(255, 255, 255, 0.06);
+                color: #edf1f4;
+                text-align: left;
+                line-height: 1.6;
+                white-space: pre-wrap;
+            }
+
+            .threshold-control {
+                width: 100%;
+                display: grid;
+                gap: 12px;
+                padding: 16px 20px;
+                border: 1px solid rgba(255, 255, 255, 0.14);
+                border-radius: 8px;
+                background: rgba(255, 255, 255, 0.06);
+            }
+
+            .device-details {
+                width: 100%;
+                min-height: 38px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 9px 14px;
+                border: 1px solid rgba(255, 255, 255, 0.14);
+                border-radius: 8px;
+                background: rgba(255, 255, 255, 0.045);
+                color: #aeb8c1;
+                font-size: 20px;
+                text-align: center;
+            }
+
+            .threshold-label {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                font-size: 24px;
+                color: #aeb8c1;
+            }
+
+            .threshold-value {
+                font-family:
+                    "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo,
+                    Consolas, monospace;
+                font-size: 24px;
+                color: #edf1f4;
+            }
+
+            .threshold-slider {
+                width: 100%;
+                height: 6px;
+                border-radius: 999px;
+                background: rgba(255, 255, 255, 0.11);
+                outline: none;
+                -webkit-appearance: none;
+                appearance: none;
+                cursor: pointer;
+                margin-bottom: 8px;
+            }
+
+            .threshold-slider::-webkit-slider-thumb {
+                -webkit-appearance: none;
+                appearance: none;
+                width: 18px;
+                height: 18px;
+                border-radius: 50%;
+                background: #2f8f83;
+                cursor: pointer;
+                transition:
+                    background 160ms ease,
+                    transform 160ms ease;
+            }
+
+            .threshold-slider::-webkit-slider-thumb:hover {
+                background: #3da89c;
+                transform: scale(1.1);
+            }
+
+            .threshold-slider::-moz-range-thumb {
+                width: 18px;
+                height: 18px;
+                border-radius: 50%;
+                background: #2f8f83;
+                cursor: pointer;
+                border: none;
+                transition:
+                    background 160ms ease,
+                    transform 160ms ease;
+            }
+
+            .threshold-slider::-moz-range-thumb:hover {
+                background: #3da89c;
+                transform: scale(1.1);
+            }
+
+            .model-buttons {
+                display: grid;
+                grid-template-columns: repeat(6, minmax(0, 1fr));
+                gap: 8px;
+            }
+
+            .model-button {
+                --download-progress: 0%;
+                min-height: 36px;
+                border: 1px solid rgba(255, 255, 255, 0.18);
+                border-radius: 6px;
+                background: rgba(255, 255, 255, 0.07);
+                color: #edf1f4;
+                font: inherit;
+                font-size: 13px;
+                cursor: pointer;
+                transition:
+                    background 160ms ease,
+                    border-color 160ms ease,
+                    color 160ms ease;
+            }
+
+            .model-button.active {
+                border-color: rgba(47, 143, 131, 0.9);
+                background: rgba(47, 143, 131, 0.28);
+                color: #ffffff;
+            }
+
+            .model-button.unavailable {
+                border-color: rgba(255, 255, 255, 0.08);
+                background: rgba(255, 255, 255, 0.025);
+                color: rgba(237, 241, 244, 0.35);
+            }
+
+            .model-button.downloading {
+                border-color: rgba(213, 109, 63, 0.75);
+                background: linear-gradient(
+                    90deg,
+                    rgba(213, 109, 63, 0.5) var(--download-progress),
+                    rgba(255, 255, 255, 0.04) var(--download-progress)
+                );
+                color: #ffffff;
+                cursor: wait;
+            }
+
+            .model-button.locked {
+                opacity: 0.45;
+                cursor: wait;
+            }
+
+            .modal-backdrop {
+                position: fixed;
+                inset: 0;
+                z-index: 20;
+                display: grid;
+                place-items: center;
+                padding: 24px;
+                background: rgba(0, 0, 0, 0.62);
+            }
+
+            .modal-backdrop.hidden {
+                display: none;
+            }
+
+            .modal {
+                width: min(92vw, 420px);
+                display: grid;
+                gap: 18px;
+                padding: 22px;
+                border: 1px solid rgba(255, 255, 255, 0.16);
+                border-radius: 8px;
+                background: #1b2024;
+                color: #edf1f4;
+                box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+            }
+
+            .modal-title {
+                margin: 0;
+                font-size: 18px;
+                font-weight: 700;
+            }
+
+            .modal-text {
+                margin: 0;
+                color: #aeb8c1;
+                line-height: 1.5;
+            }
+
+            .modal-button {
+                min-height: 40px;
+                border: 1px solid rgba(47, 143, 131, 0.9);
+                border-radius: 6px;
+                background: rgba(47, 143, 131, 0.26);
+                color: #ffffff;
+                font: inherit;
+                cursor: pointer;
+            }
+
+            .modal-button:disabled {
+                opacity: 0.55;
+                cursor: wait;
+            }
+
+            @media (max-width: 640px) {
+                .tiles {
+                    grid-template-columns: 1fr;
+                }
+
+                .model-buttons {
+                    grid-template-columns: repeat(3, minmax(0, 1fr));
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <main>
+            <p class="transcript" id="transcript"></p>
+            <div id="tiles" class="tiles" aria-label="Listening state">
+                <div class="tile waiting" data-state-tile="waiting">
+                    <span class="tile-title">Waiting</span>
+                    <span class="tile-time" data-timer="waiting">0</span>
+                    <span class="tile-unit">ms</span>
+                </div>
+                <div class="tile hearing" data-state-tile="speaking">
+                    <span class="tile-title">Hearing</span>
+                    <span class="tile-time" data-timer="speaking">0</span>
+                    <span class="tile-unit">ms</span>
+                </div>
+                <div class="tile syncing" data-state-tile="transcribing">
+                    <span class="tile-title">Transcribing</span>
+                    <span class="tile-time" data-timer="transcribing">0</span>
+                    <span class="tile-unit">ms</span>
+                </div>
+            </div>
+            <div class="meter" id="meter" aria-hidden="true">
+                <div class="meter-tooltip" id="meter-tooltip">80</div>
+                <div class="meter-hover-tooltip" id="meter-hover-tooltip">
+                    Set activation level 50
+                </div>
+                <div class="meter-track" id="meter-track"></div>
+            </div>
+            <div class="device-details" id="device-details"></div>
+            <div class="threshold-control">
+                <div class="threshold-label">
+                    <span>Silence Tail</span>
+                    <span class="threshold-value" id="silence-tail-value"
+                        >1.5 s</span
+                    >
+                </div>
+                <input
+                    type="range"
+                    id="silence-tail-slider"
+                    class="threshold-slider"
+                    min="1"
+                    max="5"
+                    step="0.1"
+                    value="1.5"
+                    aria-label="Adjust silence tail time"
+                />
+                <div class="model-buttons" id="model-buttons"></div>
+            </div>
+        </main>
+        <div class="modal-backdrop hidden" id="download-modal">
+            <div
+                class="modal"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="download-modal-title"
+            >
+                <p class="modal-title" id="download-modal-title"></p>
+                <p class="modal-text" id="download-modal-text"></p>
+                <button
+                    class="modal-button"
+                    id="download-model-button"
+                    type="button"
+                >
+                    Start download model
+                </button>
+            </div>
+        </div>
+
+        <script type="module">
+            import init from "/pkg/rust_wthisper_frontend.js";
+            init();
+        </script>
+    </body>
+</html>

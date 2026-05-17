@@ -1,0 +1,13 @@
+/.venv/
+/target/
+/frontend/target/
+
+/target/
+*.wav
+*.txt
+*.pdb
+*.exe
+*.d
+
+.DS_Store
+Thumbs.db

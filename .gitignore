@@ -1,6 +1,7 @@
 /.venv/
 /target/
 /frontend/target/
+/models/
 
 /target/
 *.wav

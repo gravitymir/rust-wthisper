@@ -18,6 +18,23 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -c "import whisper; whisper.load_model('tiny.en')"
 ```
 
+For text-to-speech on the second page, the server auto-installs piper-tts and
+auto-downloads `en_US-ryan-medium` on first start. You can also pre-install:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install piper-tts
+```
+
+The TTS page lets you switch between piper voice models (en_US-amy-low,
+en_US-amy-medium, en_US-ryan-medium, en_US-lessac-medium, en_US-libritts-high)
+and download additional ones on demand. Models are stored under `models/tts/`.
+
+The third page (Voice Clone, F5-TTS) auto-installs `f5-tts` on first start.
+Heads-up: that pulls in heavy deps (`transformers`, `accelerate`, etc.) and the
+F5-TTS base model (~1.4 GB) is fetched on the first synthesis. Upload a clean
+5–30 s mono reference WAV, paste its transcript, then paste the text you want
+spoken in that voice.
+
 ## Run
 
 ```sh

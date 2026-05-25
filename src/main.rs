@@ -24,18 +24,150 @@ use hound::{SampleFormat as WavSampleFormat, WavSpec, WavWriter};
 static ASSISTANT_STATE: OnceLock<Mutex<AssistantState>> = OnceLock::new();
 static CURRENT_MODEL: OnceLock<Mutex<String>> = OnceLock::new();
 static DOWNLOAD_STATE: OnceLock<Mutex<Option<DownloadState>>> = OnceLock::new();
+static CURRENT_TTS_MODEL: OnceLock<Mutex<String>> = OnceLock::new();
+static TTS_DOWNLOAD_STATE: OnceLock<Mutex<Option<DownloadState>>> = OnceLock::new();
 static LISTENING_ACTIVE: AtomicBool = AtomicBool::new(false);
+static UPLOAD_PENDING: AtomicBool = AtomicBool::new(false);
+static HEARING_PAUSED: AtomicBool = AtomicBool::new(false);
+static PIPER_INSTALLING: AtomicBool = AtomicBool::new(false);
+static PIPER_INSTALL_ERROR: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+static F5_INSTALLING: AtomicBool = AtomicBool::new(false);
+static F5_INSTALL_ERROR: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+static CLONE_SYNTHESIZING: AtomicBool = AtomicBool::new(false);
 static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
+
+const DEFAULT_TTS_MODEL: &str = "en_US-ryan-medium";
 
 const SIGINT: i32 = 2;
 const SIGTERM: i32 = 15;
-const MODEL_OPTIONS: [(&str, &str, u32); 6] = [
-    ("tiny", "tiny.en", 75),
-    ("base", "base.en", 142),
-    ("small", "small.en", 466),
-    ("medium", "medium.en", 1500),
-    ("large", "large", 2900),
-    ("turbo", "large-v3-turbo", 1550),
+const MODEL_OPTIONS: [(&str, &str, u32, &str); 10] = [
+    (
+        "tiny",
+        "tiny.en",
+        75,
+        "https://openaipublic.azureedge.net/main/whisper/models/d3dd57d32accea0b295c96e26691aa14d8822fac7d9d27d5dc00b4ca2826dd03/tiny.en.pt",
+    ),
+    (
+        "base",
+        "base.en",
+        142,
+        "https://openaipublic.azureedge.net/main/whisper/models/25a8566e1d0c1e2231d1c762132cd20e0f96a85d16145c3a00adf5d1ac670ead/base.en.pt",
+    ),
+    (
+        "small",
+        "small.en",
+        466,
+        "https://openaipublic.azureedge.net/main/whisper/models/f953ad0fd29cacd07d5a9eda5624af0f6bcf2258be67c92b79389873d91e0872/small.en.pt",
+    ),
+    (
+        "medium",
+        "medium.en",
+        1500,
+        "https://openaipublic.azureedge.net/main/whisper/models/d7440d1dc186f76616474e0ff0b3b6b879abc9d1a4926b7adfa41db2d497ab4f/medium.en.pt",
+    ),
+    (
+        "large",
+        "large",
+        2900,
+        "https://openaipublic.azureedge.net/main/whisper/models/e5b1a55b89c1367dacf97e3e19bfd829a01529dbfdeefa8caeb59b3f1b81dadb/large-v3.pt",
+    ),
+    (
+        "turbo",
+        "large-v3-turbo",
+        1550,
+        "https://openaipublic.azureedge.net/main/whisper/models/aff26ae408abcba5fbf8813c21e62b0941638c5f6eebfb145be0c9839262a19a/large-v3-turbo.pt",
+    ),
+    (
+        "any-tiny",
+        "tiny",
+        75,
+        "https://openaipublic.azureedge.net/main/whisper/models/65147644a518d12f04e32d6f3b26facc3f8dd46e54f811345b9bb1ace5d51b15/tiny.pt",
+    ),
+    (
+        "any-base",
+        "base",
+        142,
+        "https://openaipublic.azureedge.net/main/whisper/models/ed3a0b6b1c0edf879ad9b11b1af5a0e6ab5db9205f891f668f8b0e6c6326e34e/base.pt",
+    ),
+    (
+        "any-small",
+        "small",
+        466,
+        "https://openaipublic.azureedge.net/main/whisper/models/9ecf779972d90ba49c06d968637d720dd632c55bbf19c1b0bb1c4eb6e7b15b2c/small.pt",
+    ),
+    (
+        "any-medium",
+        "medium",
+        1500,
+        "https://openaipublic.azureedge.net/main/whisper/models/345ae4da62f9b3d59415adc60127b97c714f32e89e936602e85993674d08dcb1/medium.pt",
+    ),
+];
+
+// (label, model id, size_mb, onnx_url, onnx_json_url)
+const TTS_MODEL_OPTIONS: [(&str, &str, u32, &str, &str); 9] = [
+    (
+        "amy",
+        "en_US-amy-low",
+        22,
+        "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/low/en_US-amy-low.onnx",
+        "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/low/en_US-amy-low.onnx.json",
+    ),
+    (
+        "amy-md",
+        "en_US-amy-medium",
+        63,
+        "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx",
+        "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx.json",
+    ),
+    (
+        "ryan",
+        "en_US-ryan-medium",
+        63,
+        "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/medium/en_US-ryan-medium.onnx",
+        "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/medium/en_US-ryan-medium.onnx.json",
+    ),
+    (
+        "lessac",
+        "en_US-lessac-medium",
+        63,
+        "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx",
+        "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json",
+    ),
+    (
+        "libritts",
+        "en_US-libritts-high",
+        124,
+        "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/libritts/high/en_US-libritts-high.onnx",
+        "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/libritts/high/en_US-libritts-high.onnx.json",
+    ),
+    (
+        "ru-irina",
+        "ru_RU-irina-medium",
+        63,
+        "https://huggingface.co/rhasspy/piper-voices/resolve/main/ru/ru_RU/irina/medium/ru_RU-irina-medium.onnx",
+        "https://huggingface.co/rhasspy/piper-voices/resolve/main/ru/ru_RU/irina/medium/ru_RU-irina-medium.onnx.json",
+    ),
+    (
+        "ru-denis",
+        "ru_RU-denis-medium",
+        63,
+        "https://huggingface.co/rhasspy/piper-voices/resolve/main/ru/ru_RU/denis/medium/ru_RU-denis-medium.onnx",
+        "https://huggingface.co/rhasspy/piper-voices/resolve/main/ru/ru_RU/denis/medium/ru_RU-denis-medium.onnx.json",
+    ),
+    (
+        "ru-dmitri",
+        "ru_RU-dmitri-medium",
+        63,
+        "https://huggingface.co/rhasspy/piper-voices/resolve/main/ru/ru_RU/dmitri/medium/ru_RU-dmitri-medium.onnx",
+        "https://huggingface.co/rhasspy/piper-voices/resolve/main/ru/ru_RU/dmitri/medium/ru_RU-dmitri-medium.onnx.json",
+    ),
+    (
+        "ru-ruslan",
+        "ru_RU-ruslan-medium",
+        63,
+        "https://huggingface.co/rhasspy/piper-voices/resolve/main/ru/ru_RU/ruslan/medium/ru_RU-ruslan-medium.onnx",
+        "https://huggingface.co/rhasspy/piper-voices/resolve/main/ru/ru_RU/ruslan/medium/ru_RU-ruslan-medium.onnx.json",
+    ),
 ];
 
 unsafe extern "C" {
@@ -183,6 +315,9 @@ fn serve(args: &Args) -> Result<()> {
     println!("Serving {url}");
     println!("Press Ctrl+C to stop.");
 
+    setup_tts(args.clone());
+    setup_clone(args.clone());
+
     while !SHUTTING_DOWN.load(Ordering::SeqCst) {
         match listener.accept() {
             Ok((stream, _address)) => {
@@ -230,20 +365,23 @@ fn handle_connection(mut stream: TcpStream, args: &Args) -> Result<()> {
         }
     }
 
-    let mut request_body = String::new();
+    let mut request_body_bytes = Vec::new();
     if content_length > 0 {
-        let mut body = vec![0; content_length];
+        request_body_bytes = vec![0; content_length];
         reader
-            .read_exact(&mut body)
+            .read_exact(&mut request_body_bytes)
             .context("failed to read request body")?;
-        request_body = String::from_utf8(body).context("invalid UTF-8 in request body")?;
     }
+    let request_body = std::str::from_utf8(&request_body_bytes)
+        .map(|s| s.to_string())
+        .unwrap_or_default();
 
     let mut parts = request_line.split_whitespace();
     let method = parts.next().unwrap_or_default();
     let path = parts.next().unwrap_or_default();
+    let path_only = path.split('?').next().unwrap_or(path);
 
-    match (method, path) {
+    match (method, path_only) {
         ("GET", "/") | ("GET", "/index.html") => write_response(
             &mut stream,
             "200 OK",
@@ -304,7 +442,7 @@ fn handle_connection(mut stream: TcpStream, args: &Args) -> Result<()> {
             if let Ok(model) = parse_string_value_from_body(&request_body, "model") {
                 if MODEL_OPTIONS
                     .iter()
-                    .any(|(_label, option, _size_mb)| {
+                    .any(|(_label, option, _size_mb, _download_url)| {
                         *option == model && model_is_available(option)
                     })
                 {
@@ -336,7 +474,7 @@ fn handle_connection(mut stream: TcpStream, args: &Args) -> Result<()> {
             if let Ok(model) = parse_string_value_from_body(&request_body, "model") {
                 if MODEL_OPTIONS
                     .iter()
-                    .any(|(_label, option, _size_mb)| *option == model)
+                    .any(|(_label, option, _size_mb, _download_url)| *option == model)
                 {
                     match start_model_download(args.clone(), model.clone()) {
                         Ok(()) => write_response(
@@ -404,6 +542,270 @@ fn handle_connection(mut stream: TcpStream, args: &Args) -> Result<()> {
                     "application/json",
                     r#"{"success":false,"error":"Invalid silence tail value"}"#,
                 )
+            }
+        }
+        ("POST", "/api/pause") => {
+            HEARING_PAUSED.store(true, Ordering::SeqCst);
+            write_response(
+                &mut stream,
+                "200 OK",
+                "application/json",
+                r#"{"success":true,"paused":true}"#,
+            )
+        }
+        ("POST", "/api/resume") => {
+            HEARING_PAUSED.store(false, Ordering::SeqCst);
+            write_response(
+                &mut stream,
+                "200 OK",
+                "application/json",
+                r#"{"success":true,"paused":false}"#,
+            )
+        }
+        ("GET", "/api/clone/status") => write_response(
+            &mut stream,
+            "200 OK",
+            "application/json",
+            &clone_status_json(),
+        ),
+        ("POST", path) if path.split('?').next() == Some("/api/clone/reference") => {
+            if request_body_bytes.is_empty() {
+                return write_response(
+                    &mut stream,
+                    "400 Bad Request",
+                    "application/json",
+                    r#"{"success":false,"error":"Empty reference audio"}"#,
+                );
+            }
+            let text = parse_query_param(path, "text").unwrap_or_default();
+            let text = text.trim();
+            if text.is_empty() {
+                return write_response(
+                    &mut stream,
+                    "400 Bad Request",
+                    "application/json",
+                    r#"{"success":false,"error":"Missing reference transcript"}"#,
+                );
+            }
+            let ext = parse_query_param(path, "ext").unwrap_or_default();
+            match save_clone_reference(&request_body_bytes, text, &ext) {
+                Ok(()) => write_response(
+                    &mut stream,
+                    "200 OK",
+                    "application/json",
+                    r#"{"success":true}"#,
+                ),
+                Err(err) => {
+                    let body = format!(
+                        r#"{{"success":false,"error":"{}"}}"#,
+                        json_escape(&err.to_string())
+                    );
+                    write_response(
+                        &mut stream,
+                        "500 Internal Server Error",
+                        "application/json",
+                        &body,
+                    )
+                }
+            }
+        }
+        ("POST", "/api/clone/synthesize") => {
+            let text = request_body.trim();
+            if text.is_empty() {
+                return write_response(
+                    &mut stream,
+                    "400 Bad Request",
+                    "application/json",
+                    r#"{"success":false,"error":"Empty text"}"#,
+                );
+            }
+            if F5_INSTALLING.load(Ordering::SeqCst) {
+                return write_response(
+                    &mut stream,
+                    "409 Conflict",
+                    "application/json",
+                    r#"{"success":false,"error":"f5-tts is still installing"}"#,
+                );
+            }
+            if !has_clone_reference() {
+                return write_response(
+                    &mut stream,
+                    "409 Conflict",
+                    "application/json",
+                    r#"{"success":false,"error":"Upload a reference voice first"}"#,
+                );
+            }
+            match synthesize_clone(args, text) {
+                Ok(wav) => write_binary_response(&mut stream, "200 OK", "audio/wav", &wav),
+                Err(err) => {
+                    let body = format!(
+                        r#"{{"success":false,"error":"{}"}}"#,
+                        json_escape(&err.to_string())
+                    );
+                    write_response(
+                        &mut stream,
+                        "500 Internal Server Error",
+                        "application/json",
+                        &body,
+                    )
+                }
+            }
+        }
+        ("GET", "/api/tts/models") => write_response(
+            &mut stream,
+            "200 OK",
+            "application/json",
+            &tts_models_json(),
+        ),
+        ("POST", "/api/tts/model") => {
+            if let Ok(model) = parse_string_value_from_body(&request_body, "model") {
+                if TTS_MODEL_OPTIONS
+                    .iter()
+                    .any(|(_l, m, _s, _o, _j)| *m == model && tts_model_is_available(m))
+                {
+                    set_current_tts_model(&model);
+                    write_response(
+                        &mut stream,
+                        "200 OK",
+                        "application/json",
+                        r#"{"success":true}"#,
+                    )
+                } else {
+                    write_response(
+                        &mut stream,
+                        "400 Bad Request",
+                        "application/json",
+                        r#"{"success":false,"error":"TTS model is not available"}"#,
+                    )
+                }
+            } else {
+                write_response(
+                    &mut stream,
+                    "400 Bad Request",
+                    "application/json",
+                    r#"{"success":false,"error":"Invalid model value"}"#,
+                )
+            }
+        }
+        ("POST", "/api/tts/download-model") => {
+            if let Ok(model) = parse_string_value_from_body(&request_body, "model") {
+                if TTS_MODEL_OPTIONS
+                    .iter()
+                    .any(|(_l, m, _s, _o, _j)| *m == model)
+                {
+                    match start_tts_model_download(args.clone(), model.clone()) {
+                        Ok(()) => write_response(
+                            &mut stream,
+                            "200 OK",
+                            "application/json",
+                            r#"{"success":true,"started":true}"#,
+                        ),
+                        Err(err) => {
+                            let body = format!(
+                                r#"{{"success":false,"error":"{}"}}"#,
+                                json_escape(&err.to_string())
+                            );
+                            write_response(
+                                &mut stream,
+                                "500 Internal Server Error",
+                                "application/json",
+                                &body,
+                            )
+                        }
+                    }
+                } else {
+                    write_response(
+                        &mut stream,
+                        "400 Bad Request",
+                        "application/json",
+                        r#"{"success":false,"error":"Unknown TTS model"}"#,
+                    )
+                }
+            } else {
+                write_response(
+                    &mut stream,
+                    "400 Bad Request",
+                    "application/json",
+                    r#"{"success":false,"error":"Invalid model value"}"#,
+                )
+            }
+        }
+        ("POST", "/api/tts/synthesize") => {
+            let text = request_body.trim();
+            if text.is_empty() {
+                return write_response(
+                    &mut stream,
+                    "400 Bad Request",
+                    "application/json",
+                    r#"{"success":false,"error":"Empty text"}"#,
+                );
+            }
+            let current = get_current_tts_model();
+            if !tts_model_is_available(&current) {
+                return write_response(
+                    &mut stream,
+                    "409 Conflict",
+                    "application/json",
+                    r#"{"success":false,"error":"TTS model is not downloaded"}"#,
+                );
+            }
+            match synthesize_text(&current, text) {
+                Ok(wav) => write_binary_response(&mut stream, "200 OK", "audio/wav", &wav),
+                Err(err) => {
+                    let body = format!(
+                        r#"{{"success":false,"error":"{}"}}"#,
+                        json_escape(&err.to_string())
+                    );
+                    write_response(
+                        &mut stream,
+                        "500 Internal Server Error",
+                        "application/json",
+                        &body,
+                    )
+                }
+            }
+        }
+        ("POST", "/api/transcribe-file") => {
+            if !model_is_available(&get_current_model()) {
+                return write_response(
+                    &mut stream,
+                    "409 Conflict",
+                    "application/json",
+                    r#"{"success":false,"error":"Selected model is not ready"}"#,
+                );
+            }
+            if request_body_bytes.is_empty() {
+                return write_response(
+                    &mut stream,
+                    "400 Bad Request",
+                    "application/json",
+                    r#"{"success":false,"error":"Empty upload"}"#,
+                );
+            }
+            let extension = parse_query_param(path, "ext")
+                .map(|raw| sanitize_extension(&raw))
+                .filter(|ext| !ext.is_empty())
+                .unwrap_or_else(|| "wav".to_string());
+            match transcribe_upload_exclusive(args, &extension, &request_body_bytes) {
+                Ok(transcript) => {
+                    let body = format!(
+                        r#"{{"transcript":"{}"}}"#,
+                        json_escape(transcript.trim())
+                    );
+                    write_response(&mut stream, "200 OK", "application/json", &body)
+                }
+                Err(err) => {
+                    let body = format!(
+                        r#"{{"success":false,"error":"{}"}}"#,
+                        json_escape(&err.to_string())
+                    );
+                    write_response(
+                        &mut stream,
+                        "500 Internal Server Error",
+                        "application/json",
+                        &body,
+                    )
+                }
             }
         }
         _ => write_response(
@@ -811,7 +1213,9 @@ fn transcribe(args: &Args, output: &Path) -> Result<String> {
         .unwrap_or_else(|| PathBuf::from("."));
 
     let mut command = Command::new(&whisper_bin);
-    let model = resolve_model(&get_current_model());
+    let current_model_name = get_current_model();
+    let model = resolve_model(&current_model_name);
+    let is_english_only = current_model_name.ends_with(".en");
 
     command
         .arg(output)
@@ -829,7 +1233,14 @@ fn transcribe(args: &Args, output: &Path) -> Result<String> {
         .stderr(Stdio::null());
 
     if !args.detect_language {
-        command.arg("--language").arg(&args.language);
+        if is_english_only {
+            // .en checkpoints are English-only — always force the language flag.
+            command.arg("--language").arg(&args.language);
+        } else if args.language != "en" {
+            // Multilingual model: only force a language if the user explicitly
+            // chose a non-default one on the CLI; otherwise let whisper detect.
+            command.arg("--language").arg(&args.language);
+        }
     }
 
     let status = command
@@ -1021,7 +1432,7 @@ fn initial_model(requested_model: &str) -> String {
 
     MODEL_OPTIONS
         .iter()
-        .map(|(_label, model, _size_mb)| *model)
+        .map(|(_label, model, _size_mb, _download_url)| *model)
         .find(|model| model_is_available(model))
         .unwrap_or(requested_model)
         .to_string()
@@ -1316,6 +1727,14 @@ fn get_current_model() -> String {
 }
 
 fn listening_is_available() -> bool {
+    if UPLOAD_PENDING.load(Ordering::SeqCst) {
+        return false;
+    }
+
+    if HEARING_PAUSED.load(Ordering::SeqCst) {
+        return false;
+    }
+
     if let Some(state) = download_state()
         && state.active
     {
@@ -1323,6 +1742,108 @@ fn listening_is_available() -> bool {
     }
 
     model_is_available(&get_current_model())
+}
+
+fn transcribe_upload_exclusive(args: &Args, extension: &str, bytes: &[u8]) -> Result<String> {
+    UPLOAD_PENDING.store(true, Ordering::SeqCst);
+
+    for _ in 0..200 {
+        if !LISTENING_ACTIVE.load(Ordering::SeqCst) {
+            break;
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+
+    if LISTENING_ACTIVE
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        UPLOAD_PENDING.store(false, Ordering::SeqCst);
+        bail!("listener is still active");
+    }
+
+    let result = (|| -> Result<String> {
+        let path = save_upload(extension, bytes)?;
+        set_assistant_status(AssistantStatus::Transcribing);
+        set_assistant_level(0.0);
+        transcribe(args, &path)
+    })();
+
+    LISTENING_ACTIVE.store(false, Ordering::SeqCst);
+    UPLOAD_PENDING.store(false, Ordering::SeqCst);
+    set_assistant_status(AssistantStatus::Idle);
+    set_assistant_level(0.0);
+    result
+}
+
+fn save_upload(extension: &str, bytes: &[u8]) -> Result<PathBuf> {
+    let target_dir = project_root()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("target");
+    fs::create_dir_all(&target_dir)
+        .with_context(|| format!("failed to create upload directory {}", target_dir.display()))?;
+    let path = target_dir.join(format!("upload.{extension}"));
+    fs::write(&path, bytes)
+        .with_context(|| format!("failed to write upload {}", path.display()))?;
+    Ok(path)
+}
+
+fn sanitize_extension(value: &str) -> String {
+    value
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .take(8)
+        .collect::<String>()
+        .to_ascii_lowercase()
+}
+
+fn parse_query_param(path: &str, key: &str) -> Option<String> {
+    let query = path.split('?').nth(1)?;
+    for pair in query.split('&') {
+        let mut parts = pair.splitn(2, '=');
+        let candidate = parts.next()?;
+        let value = parts.next().unwrap_or("");
+        if candidate == key {
+            return Some(url_decode(value));
+        }
+    }
+    None
+}
+
+fn url_decode(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    let bytes = input.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if byte == b'+' {
+            output.push(' ');
+            index += 1;
+            continue;
+        }
+        if byte == b'%' && index + 2 < bytes.len() {
+            if let (Some(hi), Some(lo)) = (
+                hex_value(bytes[index + 1]),
+                hex_value(bytes[index + 2]),
+            ) {
+                output.push(char::from(hi * 16 + lo));
+                index += 3;
+                continue;
+            }
+        }
+        output.push(char::from(byte));
+        index += 1;
+    }
+    output
+}
+
+fn hex_value(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
 }
 
 fn set_assistant_status(status: AssistantStatus) {
@@ -1404,8 +1925,9 @@ fn assistant_state() -> AssistantState {
 
 fn assistant_state_json() -> String {
     let state = assistant_state();
+    let paused = HEARING_PAUSED.load(Ordering::SeqCst);
     format!(
-        r#"{{"status":"{}","level":{:.5},"left_level":{:.5},"right_level":{:.5},"channels":{},"sample_rate":{},"bits_per_sample":{},"sample_format":"{}","device_name":"{}","voice_threshold":{:.5},"silence_tail":{:.1}}}"#,
+        r#"{{"status":"{}","level":{:.5},"left_level":{:.5},"right_level":{:.5},"channels":{},"sample_rate":{},"bits_per_sample":{},"sample_format":"{}","device_name":"{}","voice_threshold":{:.5},"silence_tail":{:.1},"paused":{}}}"#,
         state.status.as_str(),
         state.level,
         state.left_level,
@@ -1416,7 +1938,8 @@ fn assistant_state_json() -> String {
         json_escape(state.sample_format),
         json_escape(&state.device_name),
         state.voice_threshold,
-        state.silence_tail
+        state.silence_tail,
+        paused
     )
 }
 
@@ -1425,7 +1948,7 @@ fn models_json() -> String {
     let download = download_state();
     let models = MODEL_OPTIONS
         .iter()
-        .map(|(label, model, size_mb)| {
+        .map(|(label, model, size_mb, download_url)| {
             let downloading = download
                 .as_ref()
                 .map(|state| state.active && state.model == *model)
@@ -1443,10 +1966,11 @@ fn models_json() -> String {
                 .unwrap_or_else(|| "null".to_string());
 
             format!(
-                r#"{{"label":"{}","model":"{}","size_mb":{},"available":{},"downloading":{},"progress":{:.1},"error":{}}}"#,
+                r#"{{"label":"{}","model":"{}","size_mb":{},"download_url":"{}","available":{},"downloading":{},"progress":{:.1},"error":{}}}"#,
                 json_escape(label),
                 json_escape(model),
                 size_mb,
+                json_escape(download_url),
                 model_is_available(model),
                 downloading,
                 progress,
@@ -1459,6 +1983,681 @@ fn models_json() -> String {
     format!(
         r#"{{"current":"{}","models":[{}]}}"#,
         json_escape(&current_model),
+        models
+    )
+}
+
+fn current_tts_model_cell() -> &'static Mutex<String> {
+    CURRENT_TTS_MODEL.get_or_init(|| Mutex::new(DEFAULT_TTS_MODEL.to_string()))
+}
+
+fn tts_download_state_cell() -> &'static Mutex<Option<DownloadState>> {
+    TTS_DOWNLOAD_STATE.get_or_init(|| Mutex::new(None))
+}
+
+fn tts_download_state() -> Option<DownloadState> {
+    tts_download_state_cell()
+        .lock()
+        .ok()
+        .and_then(|state| state.clone())
+}
+
+fn set_current_tts_model(model: &str) {
+    if let Ok(mut current) = current_tts_model_cell().lock() {
+        *current = model.to_string();
+    }
+}
+
+fn get_current_tts_model() -> String {
+    current_tts_model_cell()
+        .lock()
+        .map(|model| model.clone())
+        .unwrap_or_else(|_| DEFAULT_TTS_MODEL.to_string())
+}
+
+fn piper_install_error_cell() -> &'static Mutex<Option<String>> {
+    PIPER_INSTALL_ERROR.get_or_init(|| Mutex::new(None))
+}
+
+fn set_piper_install_error(error: Option<String>) {
+    if let Ok(mut current) = piper_install_error_cell().lock() {
+        *current = error;
+    }
+}
+
+fn get_piper_install_error() -> Option<String> {
+    piper_install_error_cell()
+        .lock()
+        .ok()
+        .and_then(|inner| inner.clone())
+}
+
+fn install_piper(args: &Args) -> Result<()> {
+    let python = args
+        .whisper_bin
+        .as_ref()
+        .and_then(python_for_whisper_bin)
+        .or_else(default_local_python)
+        .ok_or_else(|| anyhow!("could not find .venv python; create it first"))?;
+
+    eprintln!("Installing piper-tts via {}...", python.display());
+    let status = Command::new(&python)
+        .arg("-m")
+        .arg("pip")
+        .arg("install")
+        .arg("--upgrade")
+        .arg("piper-tts")
+        .status()
+        .with_context(|| format!("failed to run {}", python.display()))?;
+
+    if !status.success() {
+        bail!("pip install piper-tts exited with status {status}");
+    }
+    Ok(())
+}
+
+fn setup_tts(args: Args) {
+    thread::spawn(move || {
+        if default_local_piper().is_none() {
+            PIPER_INSTALLING.store(true, Ordering::SeqCst);
+            set_piper_install_error(None);
+            let result = install_piper(&args);
+            PIPER_INSTALLING.store(false, Ordering::SeqCst);
+            match result {
+                Ok(()) => {
+                    eprintln!("piper-tts installed");
+                }
+                Err(err) => {
+                    let msg = format!("{err:#}");
+                    eprintln!("piper install failed: {msg}");
+                    set_piper_install_error(Some(msg));
+                    return;
+                }
+            }
+        }
+
+        let any_available = TTS_MODEL_OPTIONS
+            .iter()
+            .any(|(_l, m, _s, _o, _j)| tts_model_is_available(m));
+        if any_available {
+            return;
+        }
+
+        eprintln!("Auto-downloading default TTS model: {DEFAULT_TTS_MODEL}");
+        if let Err(err) = start_tts_model_download(args, DEFAULT_TTS_MODEL.to_string()) {
+            eprintln!("Failed to start default TTS model download: {err:#}");
+        }
+    });
+}
+
+fn f5_install_error_cell() -> &'static Mutex<Option<String>> {
+    F5_INSTALL_ERROR.get_or_init(|| Mutex::new(None))
+}
+
+fn set_f5_install_error(error: Option<String>) {
+    if let Ok(mut current) = f5_install_error_cell().lock() {
+        *current = error;
+    }
+}
+
+fn get_f5_install_error() -> Option<String> {
+    f5_install_error_cell()
+        .lock()
+        .ok()
+        .and_then(|inner| inner.clone())
+}
+
+fn clone_dir() -> PathBuf {
+    project_root()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("target")
+        .join("clone")
+}
+
+fn clone_reference_text_path() -> PathBuf {
+    clone_dir().join("reference.txt")
+}
+
+fn clone_output_path() -> PathBuf {
+    clone_dir().join("output.wav")
+}
+
+fn find_clone_reference_audio() -> Option<PathBuf> {
+    let dir = clone_dir();
+    let entries = fs::read_dir(&dir).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if !name.starts_with("reference.") || name == "reference.txt" {
+            continue;
+        }
+        if path.is_file() {
+            return Some(path);
+        }
+    }
+    None
+}
+
+fn has_clone_reference() -> bool {
+    find_clone_reference_audio().is_some() && clone_reference_text_path().exists()
+}
+
+fn get_clone_reference_text() -> Option<String> {
+    fs::read_to_string(clone_reference_text_path()).ok()
+}
+
+fn default_local_f5tts() -> Option<PathBuf> {
+    let mut starts = Vec::new();
+
+    if let Ok(cwd) = env::current_dir() {
+        starts.push(cwd);
+    }
+    if let Ok(exe) = env::current_exe()
+        && let Some(parent) = exe.parent()
+    {
+        starts.push(parent.to_path_buf());
+    }
+
+    starts.into_iter().find_map(|start| {
+        find_upward(start.clone(), ".venv/Scripts/f5-tts_infer-cli.exe")
+            .or_else(|| find_upward(start.clone(), ".venv/Scripts/f5-tts_infer-cli"))
+            .or_else(|| find_upward(start, ".venv/bin/f5-tts_infer-cli"))
+    })
+}
+
+fn install_f5tts(args: &Args) -> Result<()> {
+    let python = args
+        .whisper_bin
+        .as_ref()
+        .and_then(python_for_whisper_bin)
+        .or_else(default_local_python)
+        .ok_or_else(|| anyhow!("could not find .venv python; create it first"))?;
+
+    eprintln!("Installing f5-tts via {}... (this may take several minutes)", python.display());
+    let status = Command::new(&python)
+        .arg("-m")
+        .arg("pip")
+        .arg("install")
+        .arg("--upgrade")
+        .arg("f5-tts")
+        .status()
+        .with_context(|| format!("failed to run {}", python.display()))?;
+
+    if !status.success() {
+        bail!("pip install f5-tts exited with status {status}");
+    }
+    Ok(())
+}
+
+fn setup_clone(args: Args) {
+    thread::spawn(move || {
+        if default_local_f5tts().is_none() {
+            F5_INSTALLING.store(true, Ordering::SeqCst);
+            set_f5_install_error(None);
+            let result = install_f5tts(&args);
+            F5_INSTALLING.store(false, Ordering::SeqCst);
+            match result {
+                Ok(()) => eprintln!("f5-tts installed"),
+                Err(err) => {
+                    let msg = format!("{err:#}");
+                    eprintln!("f5-tts install failed: {msg}");
+                    set_f5_install_error(Some(msg));
+                }
+            }
+        }
+    });
+}
+
+fn save_clone_reference(audio_bytes: &[u8], text: &str, extension: &str) -> Result<()> {
+    let dir = clone_dir();
+    fs::create_dir_all(&dir)
+        .with_context(|| format!("failed to create clone dir {}", dir.display()))?;
+
+    // Clear any previous reference audio (could be a different extension).
+    if let Ok(entries) = fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if name.starts_with("reference.") && name != "reference.txt" {
+                let _ = fs::remove_file(&path);
+            }
+        }
+    }
+
+    let ext = {
+        let clean = sanitize_extension(extension);
+        if clean.is_empty() {
+            "wav".to_string()
+        } else {
+            clean
+        }
+    };
+    let ref_path = dir.join(format!("reference.{ext}"));
+    fs::write(&ref_path, audio_bytes)
+        .with_context(|| format!("failed to save reference audio {}", ref_path.display()))?;
+    fs::write(clone_reference_text_path(), text)
+        .context("failed to save clone reference text")?;
+    Ok(())
+}
+
+fn synthesize_clone(args: &Args, gen_text: &str) -> Result<Vec<u8>> {
+    if !has_clone_reference() {
+        bail!("No reference audio uploaded");
+    }
+    if default_local_f5tts().is_none() {
+        bail!("f5-tts is not installed yet");
+    }
+
+    let ref_audio = find_clone_reference_audio()
+        .ok_or_else(|| anyhow!("reference audio file not found"))?;
+    let ref_text = get_clone_reference_text()
+        .ok_or_else(|| anyhow!("failed to read reference transcript"))?;
+    let out_dir = clone_dir();
+    let out_file = "output.wav";
+
+    // Use Python to invoke the f5-tts API. The CLI flags vary across versions,
+    // but the Python API is stable.
+    let python = args
+        .whisper_bin
+        .as_ref()
+        .and_then(python_for_whisper_bin)
+        .or_else(default_local_python)
+        .ok_or_else(|| anyhow!("could not find .venv python"))?;
+
+    let script = r#"
+import sys, os
+from pathlib import Path
+ref_audio, ref_text, gen_text, out_dir, out_file = sys.argv[1:6]
+try:
+    from f5_tts.api import F5TTS
+except Exception as exc:
+    print(f"failed to import f5_tts: {exc}", file=sys.stderr)
+    sys.exit(2)
+
+os.makedirs(out_dir, exist_ok=True)
+out_path = str(Path(out_dir) / out_file)
+
+try:
+    f5 = F5TTS()
+except Exception as exc:
+    print(f"failed to init F5TTS: {exc}", file=sys.stderr)
+    sys.exit(3)
+
+try:
+    f5.infer(
+        ref_file=ref_audio,
+        ref_text=ref_text,
+        gen_text=gen_text,
+        file_wave=out_path,
+        seed=-1,
+    )
+except Exception as exc:
+    print(f"f5 infer failed: {exc}", file=sys.stderr)
+    sys.exit(4)
+"#;
+
+    CLONE_SYNTHESIZING.store(true, Ordering::SeqCst);
+    let result = (|| -> Result<Vec<u8>> {
+        let output = Command::new(&python)
+            .arg("-c")
+            .arg(script)
+            .arg(&ref_audio)
+            .arg(&ref_text)
+            .arg(gen_text)
+            .arg(&out_dir)
+            .arg(out_file)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .with_context(|| format!("failed to run {}", python.display()))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("f5-tts failed: {stderr}");
+        }
+        let wav_path = clone_output_path();
+        let wav = fs::read(&wav_path)
+            .with_context(|| format!("failed to read generated WAV {}", wav_path.display()))?;
+        Ok(wav)
+    })();
+    CLONE_SYNTHESIZING.store(false, Ordering::SeqCst);
+    result
+}
+
+fn clone_status_json() -> String {
+    let installing = F5_INSTALLING.load(Ordering::SeqCst);
+    let install_error = get_f5_install_error()
+        .map(|e| format!(r#""{}""#, json_escape(&e)))
+        .unwrap_or_else(|| "null".to_string());
+    let available = default_local_f5tts().is_some();
+    let has_ref = has_clone_reference();
+    let ref_text = get_clone_reference_text()
+        .map(|t| format!(r#""{}""#, json_escape(&t)))
+        .unwrap_or_else(|| "null".to_string());
+    let synthesizing = CLONE_SYNTHESIZING.load(Ordering::SeqCst);
+    format!(
+        r#"{{"installing":{},"install_error":{},"available":{},"has_reference":{},"reference_text":{},"synthesizing":{}}}"#,
+        installing, install_error, available, has_ref, ref_text, synthesizing
+    )
+}
+
+fn tts_models_root() -> PathBuf {
+    project_root()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("models")
+        .join("tts")
+}
+
+fn tts_model_is_available(model: &str) -> bool {
+    find_tts_model_file(model).is_some()
+}
+
+fn find_tts_model_file(model: &str) -> Option<PathBuf> {
+    let onnx_name = format!("{model}.onnx");
+    let json_name = format!("{model}.onnx.json");
+
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    dirs.push(tts_models_root());
+    if let Some(root) = project_root() {
+        dirs.push(root.join("models"));
+        dirs.push(root);
+    }
+    if let Ok(cwd) = env::current_dir() {
+        dirs.push(cwd.join("models").join("tts"));
+        dirs.push(cwd.join("models"));
+        dirs.push(cwd);
+    }
+    if let Ok(exe) = env::current_exe()
+        && let Some(parent) = exe.parent()
+    {
+        dirs.push(parent.join("models").join("tts"));
+        dirs.push(parent.to_path_buf());
+    }
+
+    dirs.into_iter().find_map(|dir| {
+        let onnx = dir.join(&onnx_name);
+        let json = dir.join(&json_name);
+        if onnx.exists() && json.exists() {
+            Some(onnx)
+        } else {
+            None
+        }
+    })
+}
+
+fn set_tts_download_started(model: &str) {
+    if let Ok(mut state) = tts_download_state_cell().lock() {
+        *state = Some(DownloadState {
+            model: model.to_string(),
+            progress: 0.0,
+            active: true,
+            error: None,
+        });
+    }
+}
+
+fn set_tts_download_progress(model: &str, progress: f32) {
+    if let Ok(mut state) = tts_download_state_cell().lock()
+        && let Some(current) = state.as_mut()
+        && current.model == model
+    {
+        current.progress = progress.clamp(0.0, 100.0);
+    }
+}
+
+fn set_tts_download_finished(model: &str) {
+    set_current_tts_model(model);
+    if let Ok(mut state) = tts_download_state_cell().lock() {
+        *state = Some(DownloadState {
+            model: model.to_string(),
+            progress: 100.0,
+            active: false,
+            error: None,
+        });
+    }
+}
+
+fn set_tts_download_error(model: &str, error: String) {
+    if let Ok(mut state) = tts_download_state_cell().lock() {
+        *state = Some(DownloadState {
+            model: model.to_string(),
+            progress: 0.0,
+            active: false,
+            error: Some(error),
+        });
+    }
+}
+
+fn start_tts_model_download(args: Args, model: String) -> Result<()> {
+    if tts_model_is_available(&model) {
+        set_tts_download_finished(&model);
+        return Ok(());
+    }
+
+    if let Some(state) = tts_download_state()
+        && state.active
+    {
+        return Ok(());
+    }
+
+    let model_info = TTS_MODEL_OPTIONS
+        .iter()
+        .find(|(_label, m, _size, _onnx, _json)| *m == model)
+        .ok_or_else(|| anyhow!("Unknown TTS model"))?;
+    let onnx_url = model_info.3.to_string();
+    let json_url = model_info.4.to_string();
+
+    set_tts_download_started(&model);
+    thread::spawn(move || {
+        if let Err(err) = download_tts_model(&args, &model, &onnx_url, &json_url) {
+            set_tts_download_error(&model, err.to_string());
+        }
+    });
+
+    Ok(())
+}
+
+const TTS_DOWNLOAD_SCRIPT: &str = r#"
+import sys, urllib.request
+def progress(blocks, block_size, total):
+    if total > 0:
+        pct = min(100.0, blocks * block_size * 100.0 / total)
+        sys.stderr.write(f"\r{pct:.1f}%")
+        sys.stderr.flush()
+url, output = sys.argv[1], sys.argv[2]
+urllib.request.urlretrieve(url, output, progress)
+"#;
+
+fn download_tts_model(args: &Args, model: &str, onnx_url: &str, json_url: &str) -> Result<()> {
+    let target_dir = tts_models_root();
+    fs::create_dir_all(&target_dir).with_context(|| {
+        format!("failed to create TTS models directory {}", target_dir.display())
+    })?;
+
+    let python = args
+        .whisper_bin
+        .as_ref()
+        .and_then(python_for_whisper_bin)
+        .or_else(default_local_python)
+        .unwrap_or_else(|| PathBuf::from("python"));
+
+    let onnx_path = target_dir.join(format!("{model}.onnx"));
+    let json_path = target_dir.join(format!("{model}.onnx.json"));
+
+    let mut child = Command::new(&python)
+        .arg("-c")
+        .arg(TTS_DOWNLOAD_SCRIPT)
+        .arg(onnx_url)
+        .arg(&onnx_path)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .with_context(|| format!("failed to run {}", python.display()))?;
+
+    if let Some(stderr) = child.stderr.take() {
+        let mut reader = BufReader::new(stderr);
+        let mut chunk = Vec::new();
+        loop {
+            chunk.clear();
+            let read = reader
+                .read_until(b'\r', &mut chunk)
+                .context("failed to read TTS model download progress")?;
+            if read == 0 {
+                break;
+            }
+
+            let text = String::from_utf8_lossy(&chunk);
+            if let Some(progress) = parse_progress_percent(&text) {
+                set_tts_download_progress(model, progress * 0.95);
+            }
+        }
+    }
+
+    let status = child
+        .wait()
+        .context("failed to wait for TTS .onnx download")?;
+    if !status.success() {
+        bail!("TTS .onnx download exited with status {status}");
+    }
+
+    set_tts_download_progress(model, 96.0);
+
+    let status = Command::new(&python)
+        .arg("-c")
+        .arg(TTS_DOWNLOAD_SCRIPT)
+        .arg(json_url)
+        .arg(&json_path)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .context("failed to run TTS .onnx.json download")?;
+    if !status.success() {
+        bail!("TTS .onnx.json download exited with status {status}");
+    }
+
+    set_tts_download_finished(model);
+    Ok(())
+}
+
+fn default_local_piper() -> Option<PathBuf> {
+    let mut starts = Vec::new();
+
+    if let Ok(cwd) = env::current_dir() {
+        starts.push(cwd);
+    }
+
+    if let Ok(exe) = env::current_exe()
+        && let Some(parent) = exe.parent()
+    {
+        starts.push(parent.to_path_buf());
+    }
+
+    starts.into_iter().find_map(|start| {
+        find_upward(start.clone(), ".venv/Scripts/piper.exe")
+            .or_else(|| find_upward(start.clone(), ".venv/Scripts/piper"))
+            .or_else(|| find_upward(start, ".venv/bin/piper"))
+    })
+}
+
+fn synthesize_text(model: &str, text: &str) -> Result<Vec<u8>> {
+    let onnx = find_tts_model_file(model)
+        .ok_or_else(|| anyhow!("TTS model {model} is not downloaded"))?;
+    let target_dir = project_root()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("target");
+    fs::create_dir_all(&target_dir)
+        .with_context(|| format!("failed to create output dir {}", target_dir.display()))?;
+    let output = target_dir.join("tts.wav");
+
+    let piper_bin = default_local_piper().unwrap_or_else(|| PathBuf::from("piper"));
+
+    let mut child = Command::new(&piper_bin)
+        .arg("--model")
+        .arg(&onnx)
+        .arg("--output_file")
+        .arg(&output)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .with_context(|| {
+            format!(
+                "failed to run {}. Install piper-tts in .venv with: .venv/Scripts/pip install piper-tts",
+                piper_bin.display()
+            )
+        })?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(text.as_bytes())
+            .context("failed to write text to piper stdin")?;
+    }
+
+    let output_result = child
+        .wait_with_output()
+        .context("failed to wait for piper process")?;
+    if !output_result.status.success() {
+        let stderr = String::from_utf8_lossy(&output_result.stderr);
+        bail!("piper failed: {stderr}");
+    }
+
+    let wav = fs::read(&output)
+        .with_context(|| format!("failed to read generated WAV {}", output.display()))?;
+    Ok(wav)
+}
+
+fn tts_models_json() -> String {
+    let current_model = get_current_tts_model();
+    let download = tts_download_state();
+    let models = TTS_MODEL_OPTIONS
+        .iter()
+        .map(|(label, model, size_mb, onnx_url, _json_url)| {
+            let downloading = download
+                .as_ref()
+                .map(|state| state.active && state.model == *model)
+                .unwrap_or(false);
+            let progress = download
+                .as_ref()
+                .filter(|state| state.model == *model)
+                .map(|state| state.progress)
+                .unwrap_or(0.0);
+            let error = download
+                .as_ref()
+                .filter(|state| state.model == *model)
+                .and_then(|state| state.error.as_ref())
+                .map(|error| format!(r#""{}""#, json_escape(error)))
+                .unwrap_or_else(|| "null".to_string());
+
+            format!(
+                r#"{{"label":"{}","model":"{}","size_mb":{},"download_url":"{}","available":{},"downloading":{},"progress":{:.1},"error":{}}}"#,
+                json_escape(label),
+                json_escape(model),
+                size_mb,
+                json_escape(onnx_url),
+                tts_model_is_available(model),
+                downloading,
+                progress,
+                error
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+
+    let piper_installing = PIPER_INSTALLING.load(Ordering::SeqCst);
+    let piper_install_error = get_piper_install_error()
+        .map(|e| format!(r#""{}""#, json_escape(&e)))
+        .unwrap_or_else(|| "null".to_string());
+    let piper_available = default_local_piper().is_some();
+
+    format!(
+        r#"{{"current":"{}","piper_installing":{},"piper_install_error":{},"piper_available":{},"models":[{}]}}"#,
+        json_escape(&current_model),
+        piper_installing,
+        piper_install_error,
+        piper_available,
         models
     )
 }

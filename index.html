@@ -21,8 +21,7 @@
             body {
                 margin: 0;
                 min-height: 100vh;
-                display: grid;
-                place-items: center;
+                overflow-x: hidden;
                 background:
                     radial-gradient(
                         circle at 20% 10%,
@@ -37,12 +36,219 @@
                     );
             }
 
+            .pages {
+                display: flex;
+                width: 300vw;
+                min-height: 100vh;
+                transition: transform 400ms cubic-bezier(0.4, 0, 0.2, 1);
+            }
+
+            .pages[data-page="1"] {
+                transform: translateX(-100vw);
+            }
+
+            .pages[data-page="2"] {
+                transform: translateX(-200vw);
+            }
+
+            .clone-section {
+                width: 100%;
+                display: grid;
+                gap: 10px;
+                text-align: left;
+            }
+
+            .clone-label {
+                color: #aeb8c1;
+                font-size: 13px;
+                letter-spacing: 0.04em;
+                text-transform: uppercase;
+                font-weight: 700;
+            }
+
+            .clone-ref-name {
+                width: 100%;
+                min-height: 22px;
+                padding: 6px 12px;
+                border-radius: 6px;
+                background: rgba(255, 255, 255, 0.045);
+                color: #aeb8c1;
+                font-size: 13px;
+                overflow-wrap: anywhere;
+            }
+
+            .clone-ref-name.set {
+                color: #edf1f4;
+                border: 1px solid rgba(47, 143, 131, 0.55);
+                background: rgba(47, 143, 131, 0.15);
+            }
+
+            .tts-input.small {
+                min-height: 84px;
+            }
+
+            .page {
+                width: 100vw;
+                min-height: 100vh;
+                display: grid;
+                place-items: center;
+                padding: 32px 0;
+            }
+
             main {
                 width: min(92vw, 720px);
                 display: grid;
                 justify-items: center;
                 gap: 28px;
                 text-align: center;
+            }
+
+            .nav-arrow {
+                position: fixed;
+                top: 50%;
+                width: 44px;
+                height: 88px;
+                z-index: 30;
+                border: 1px solid rgba(255, 255, 255, 0.14);
+                border-radius: 10px;
+                background: rgba(10, 14, 16, 0.55);
+                color: #edf1f4;
+                font: inherit;
+                font-size: 24px;
+                font-weight: 700;
+                cursor: pointer;
+                transform: translateY(-50%);
+                transition:
+                    background 200ms ease,
+                    border-color 200ms ease,
+                    opacity 200ms ease;
+            }
+
+            .nav-arrow:hover {
+                background: rgba(47, 143, 131, 0.25);
+                border-color: rgba(47, 143, 131, 0.6);
+            }
+
+            .nav-arrow.hidden {
+                opacity: 0;
+                pointer-events: none;
+            }
+
+            .nav-left {
+                left: 12px;
+            }
+
+            .nav-right {
+                right: 12px;
+            }
+
+            .page-title {
+                margin: 0;
+                font-size: 25px;
+                color: #aeb8c1;
+                letter-spacing: 0.12em;
+                text-transform: uppercase;
+                text-align: center;
+            }
+
+            .tts-input-wrap {
+                width: 100%;
+                position: relative;
+            }
+
+            .tts-input {
+                width: 100%;
+                min-height: 200px;
+                margin: 0;
+                padding: 16px 20px 36px 20px;
+                resize: vertical;
+                border: 1px solid rgba(255, 255, 255, 0.14);
+                border-radius: 8px;
+                background: rgba(255, 255, 255, 0.06);
+                color: #edf1f4;
+                font: inherit;
+                font-size: 15px;
+                line-height: 1.55;
+                outline: none;
+                transition:
+                    border-color 200ms ease,
+                    box-shadow 200ms ease;
+            }
+
+            .tts-input:focus {
+                border-color: rgba(47, 143, 131, 0.7);
+                box-shadow: 0 0 0 3px rgba(47, 143, 131, 0.18);
+            }
+
+            .tts-char-count {
+                position: absolute;
+                right: 14px;
+                bottom: 10px;
+                color: #aeb8c1;
+                font-size: 13px;
+                font-variant-numeric: tabular-nums;
+                pointer-events: none;
+            }
+
+            .tts-actions {
+                width: 100%;
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 12px;
+            }
+
+            .tts-action-button {
+                min-height: 44px;
+                border: 1px solid rgba(75, 116, 217, 0.7);
+                border-radius: 8px;
+                background: rgba(75, 116, 217, 0.18);
+                color: #edf1f4;
+                font: inherit;
+                font-size: 15px;
+                font-weight: 700;
+                cursor: pointer;
+                transition:
+                    background 160ms ease,
+                    border-color 160ms ease,
+                    transform 160ms ease;
+            }
+
+            .tts-action-button:hover:not(:disabled) {
+                background: rgba(75, 116, 217, 0.32);
+                border-color: rgba(75, 116, 217, 0.9);
+                transform: translateY(-1px);
+            }
+
+            .tts-action-button.combine {
+                border-color: rgba(47, 143, 131, 0.7);
+                background: rgba(47, 143, 131, 0.22);
+            }
+
+            .tts-action-button.combine:hover:not(:disabled) {
+                background: rgba(47, 143, 131, 0.34);
+                border-color: rgba(47, 143, 131, 0.9);
+            }
+
+            .tts-action-button:disabled {
+                opacity: 0.55;
+                cursor: wait;
+            }
+
+            .tts-audio {
+                width: 100%;
+            }
+
+            .tts-audio.hidden {
+                display: none;
+            }
+
+            .tts-status {
+                width: 100%;
+                min-height: 22px;
+                color: #aeb8c1;
+                font-size: 14px;
+                text-align: left;
+                overflow-wrap: anywhere;
             }
 
             .tiles {
@@ -54,6 +260,7 @@
             }
 
             .tile {
+                position: relative;
                 min-height: 136px;
                 border: 1px solid rgba(255, 255, 255, 0.14);
                 border-radius: 8px;
@@ -70,6 +277,32 @@
                     background 200ms ease,
                     border-color 200ms ease,
                     box-shadow 200ms ease;
+            }
+
+            .tile-action {
+                position: absolute;
+                right: 16px;
+                bottom: 14px;
+                padding: 0;
+                background: transparent;
+                color: #edf1f4;
+                font-size: 22px;
+                font-weight: 700;
+                letter-spacing: 0.1em;
+                text-transform: uppercase;
+                pointer-events: none;
+            }
+
+            .tile-action.hidden {
+                display: none;
+            }
+
+            .tile-action.start {
+                color: rgba(120, 224, 177, 0.95);
+            }
+
+            .tile-action.stop {
+                color: rgba(238, 154, 110, 0.95);
             }
 
             .tile:hover {
@@ -241,7 +474,7 @@
                 width: 100%;
                 min-height: 84px;
                 margin: 0;
-                padding: 18px 20px;
+                padding: 18px 20px 56px 20px;
                 border: 1px solid rgba(255, 255, 255, 0.14);
                 border-radius: 8px;
                 background: rgba(255, 255, 255, 0.06);
@@ -249,6 +482,44 @@
                 text-align: left;
                 line-height: 1.6;
                 white-space: pre-wrap;
+            }
+
+            .transcript-wrap {
+                position: relative;
+                width: 100%;
+            }
+
+            .copy-transcript {
+                position: absolute;
+                bottom: 12px;
+                right: 12px;
+                min-width: 56px;
+                height: 34px;
+                border: 1px solid rgba(47, 143, 131, 0.9);
+                border-radius: 6px;
+                background: rgba(47, 143, 131, 0.24);
+                color: #ffffff;
+                font: inherit;
+                font-size: 14px;
+                font-weight: 700;
+                cursor: pointer;
+                transform: translateY(0) scale(1);
+                transition:
+                    transform 140ms ease,
+                    background 180ms ease,
+                    border-color 180ms ease,
+                    box-shadow 180ms ease;
+            }
+
+            .copy-transcript.hidden {
+                display: none;
+            }
+
+            .copy-transcript.copied {
+                border-color: rgba(120, 224, 177, 0.95);
+                background: rgba(120, 224, 177, 0.24);
+                box-shadow: 0 0 0 4px rgba(120, 224, 177, 0.12);
+                transform: translateY(-1px) scale(1.04);
             }
 
             .threshold-control {
@@ -425,6 +696,7 @@
                 margin: 0;
                 color: #aeb8c1;
                 line-height: 1.5;
+                overflow-wrap: anywhere;
             }
 
             .modal-button {
@@ -442,6 +714,44 @@
                 cursor: wait;
             }
 
+            .upload-control {
+                width: 100%;
+                display: grid;
+                gap: 10px;
+            }
+
+            .upload-button {
+                width: 100%;
+                min-height: 44px;
+                border: 1px solid rgba(75, 116, 217, 0.7);
+                border-radius: 8px;
+                background: rgba(75, 116, 217, 0.18);
+                color: #edf1f4;
+                font: inherit;
+                font-size: 15px;
+                font-weight: 700;
+                cursor: pointer;
+                transition:
+                    background 160ms ease,
+                    border-color 160ms ease,
+                    transform 160ms ease;
+            }
+
+            .upload-button:hover:not(:disabled) {
+                background: rgba(75, 116, 217, 0.32);
+                border-color: rgba(75, 116, 217, 0.9);
+                transform: translateY(-1px);
+            }
+
+            .upload-button:disabled {
+                opacity: 0.55;
+                cursor: wait;
+            }
+
+            .upload-input {
+                display: none;
+            }
+
             @media (max-width: 640px) {
                 .tiles {
                     grid-template-columns: 1fr;
@@ -454,53 +764,231 @@
         </style>
     </head>
     <body>
-        <main>
-            <p class="transcript" id="transcript"></p>
-            <div id="tiles" class="tiles" aria-label="Listening state">
-                <div class="tile waiting" data-state-tile="waiting">
-                    <span class="tile-title">Waiting</span>
-                    <span class="tile-time" data-timer="waiting">0</span>
-                    <span class="tile-unit">ms</span>
-                </div>
-                <div class="tile hearing" data-state-tile="speaking">
-                    <span class="tile-title">Hearing</span>
-                    <span class="tile-time" data-timer="speaking">0</span>
-                    <span class="tile-unit">ms</span>
-                </div>
-                <div class="tile syncing" data-state-tile="transcribing">
-                    <span class="tile-title">Transcribing</span>
-                    <span class="tile-time" data-timer="transcribing">0</span>
-                    <span class="tile-unit">ms</span>
-                </div>
-            </div>
-            <div class="meter" id="meter" aria-hidden="true">
-                <div class="meter-tooltip" id="meter-tooltip">80</div>
-                <div class="meter-hover-tooltip" id="meter-hover-tooltip">
-                    Set activation level 50
-                </div>
-                <div class="meter-track" id="meter-track"></div>
-            </div>
-            <div class="device-details" id="device-details"></div>
-            <div class="threshold-control">
-                <div class="threshold-label">
-                    <span>Silence Tail</span>
-                    <span class="threshold-value" id="silence-tail-value"
-                        >1.5 s</span
-                    >
-                </div>
-                <input
-                    type="range"
-                    id="silence-tail-slider"
-                    class="threshold-slider"
-                    min="1"
-                    max="5"
-                    step="0.1"
-                    value="1.5"
-                    aria-label="Adjust silence tail time"
-                />
-                <div class="model-buttons" id="model-buttons"></div>
-            </div>
-        </main>
+        <button
+            class="nav-arrow nav-left hidden"
+            id="nav-left"
+            type="button"
+            aria-label="Previous page"
+        >
+            &#9664;
+        </button>
+        <button
+            class="nav-arrow nav-right"
+            id="nav-right"
+            type="button"
+            aria-label="Next page"
+        >
+            &#9654;
+        </button>
+        <div class="pages" id="pages" data-page="0">
+            <section class="page" id="page-stt">
+                <main>
+                    <p class="page-title">Speech &rarr; Text</p>
+                    <div class="transcript-wrap">
+                        <p class="transcript" id="transcript"></p>
+                        <button
+                            class="copy-transcript hidden"
+                            id="copy-transcript"
+                            type="button"
+                        >
+                            copy
+                        </button>
+                    </div>
+                    <div id="tiles" class="tiles" aria-label="Listening state">
+                        <div class="tile waiting" data-state-tile="waiting">
+                            <span class="tile-title">Waiting</span>
+                            <span class="tile-time" data-timer="waiting"
+                                >0</span
+                            >
+                            <span class="tile-unit">ms</span>
+                            <span
+                                class="tile-action hidden"
+                                id="tile-action"
+                            ></span>
+                        </div>
+                        <div class="tile hearing" data-state-tile="speaking">
+                            <span class="tile-title">Hearing</span>
+                            <span class="tile-time" data-timer="speaking"
+                                >0</span
+                            >
+                            <span class="tile-unit">ms</span>
+                        </div>
+                        <div
+                            class="tile syncing"
+                            data-state-tile="transcribing"
+                        >
+                            <span class="tile-title">Transcribing</span>
+                            <span class="tile-time" data-timer="transcribing"
+                                >0</span
+                            >
+                            <span class="tile-unit">ms</span>
+                        </div>
+                    </div>
+                    <div class="meter" id="meter" aria-hidden="true">
+                        <div class="meter-tooltip" id="meter-tooltip">80</div>
+                        <div
+                            class="meter-hover-tooltip"
+                            id="meter-hover-tooltip"
+                        >
+                            Set activation level 50
+                        </div>
+                        <div class="meter-track" id="meter-track"></div>
+                    </div>
+                    <div class="device-details" id="device-details"></div>
+                    <div class="upload-control">
+                        <input
+                            type="file"
+                            id="upload-input"
+                            class="upload-input"
+                            accept="audio/*,video/*,.wav,.mp3,.m4a,.flac,.ogg,.opus,.webm,.mp4"
+                        />
+                        <button
+                            class="upload-button"
+                            id="upload-button"
+                            type="button"
+                        >
+                            Upload file with audio
+                        </button>
+                    </div>
+                    <div class="threshold-control">
+                        <div class="threshold-label">
+                            <span>Silence Tail</span>
+                            <span
+                                class="threshold-value"
+                                id="silence-tail-value"
+                                >1.5 s</span
+                            >
+                        </div>
+                        <input
+                            type="range"
+                            id="silence-tail-slider"
+                            class="threshold-slider"
+                            min="1"
+                            max="5"
+                            step="0.1"
+                            value="1.5"
+                            aria-label="Adjust silence tail time"
+                        />
+                        <div class="model-buttons" id="model-buttons"></div>
+                    </div>
+                </main>
+            </section>
+            <section class="page" id="page-tts">
+                <main>
+                    <p class="page-title">Text &rarr; Speech</p>
+                    <div class="tts-input-wrap">
+                        <textarea
+                            class="tts-input"
+                            id="tts-input"
+                            placeholder="Paste or type text here..."
+                            aria-label="Text to synthesize"
+                        ></textarea>
+                        <span class="tts-char-count" id="tts-char-count"
+                            >0 characters</span
+                        >
+                    </div>
+                    <div class="tts-actions">
+                        <button
+                            class="tts-action-button combine"
+                            id="tts-combine"
+                            type="button"
+                        >
+                            Combine
+                        </button>
+                        <button
+                            class="tts-action-button"
+                            id="tts-download"
+                            type="button"
+                            disabled
+                        >
+                            Download
+                        </button>
+                    </div>
+                    <audio
+                        class="tts-audio hidden"
+                        id="tts-audio"
+                        controls
+                        preload="none"
+                    ></audio>
+                    <div class="tts-status" id="tts-status"></div>
+                    <div class="threshold-control">
+                        <div class="model-buttons" id="tts-model-buttons"></div>
+                    </div>
+                </main>
+            </section>
+            <section class="page" id="page-clone">
+                <main>
+                    <p class="page-title">Voice Clone (F5-TTS)</p>
+                    <div class="clone-section">
+                        <span class="clone-label">1. Reference voice (5-30s, WAV/MP3/M4A/FLAC/OGG)</span>
+                        <input
+                            type="file"
+                            id="clone-ref-input"
+                            class="upload-input"
+                            accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg"
+                        />
+                        <button
+                            class="upload-button"
+                            id="clone-ref-button"
+                            type="button"
+                        >
+                            Upload reference audio
+                        </button>
+                        <div class="clone-ref-name" id="clone-ref-name">
+                            No reference uploaded yet.
+                        </div>
+                    </div>
+                    <div class="clone-section">
+                        <span class="clone-label">2. What is said in that audio</span>
+                        <div class="tts-input-wrap">
+                            <textarea
+                                class="tts-input small"
+                                id="clone-ref-text"
+                                placeholder="Type exactly what is spoken in the reference audio..."
+                                aria-label="Reference transcript"
+                            ></textarea>
+                            <span class="tts-char-count" id="clone-ref-text-count">0 characters</span>
+                        </div>
+                    </div>
+                    <div class="clone-section">
+                        <span class="clone-label">3. Text to say in that voice</span>
+                        <div class="tts-input-wrap">
+                            <textarea
+                                class="tts-input"
+                                id="clone-gen-text"
+                                placeholder="Paste text to synthesize in the cloned voice..."
+                                aria-label="Target text"
+                            ></textarea>
+                            <span class="tts-char-count" id="clone-gen-text-count">0 characters</span>
+                        </div>
+                    </div>
+                    <div class="tts-actions">
+                        <button
+                            class="tts-action-button combine"
+                            id="clone-combine"
+                            type="button"
+                        >
+                            Combine
+                        </button>
+                        <button
+                            class="tts-action-button"
+                            id="clone-download"
+                            type="button"
+                            disabled
+                        >
+                            Download
+                        </button>
+                    </div>
+                    <audio
+                        class="tts-audio hidden"
+                        id="clone-audio"
+                        controls
+                        preload="none"
+                    ></audio>
+                    <div class="tts-status" id="clone-status"></div>
+                </main>
+            </section>
+        </div>
         <div class="modal-backdrop hidden" id="download-modal">
             <div
                 class="modal"
